@@ -398,66 +398,13 @@ public class SCIMProvisioningConnector extends AbstractOutboundProvisioningConne
         outboundAttributes.put(ClaimMapping.build(
                         IdentityProvisioningConstants.DELETED_USER_CLAIM_URI, null, null, false),
                 Arrays.asList(new String[0]));
-
-  /*      String domainName = UserCoreUtil.getDomainName(userStoreManager.getRealmConfiguration());
-        if (log.isDebugEnabled()) {
-            log.debug("Adding domain name : " + domainName + " to role : " + roleName);
-        }
-        String domainAwareName = UserCoreUtil.addDomainToName(roleName, domainName);*/
-
         ProvisioningEntity provisioningEntity = new ProvisioningEntity(
                 ProvisioningEntityType.GROUP, groupName, ProvisioningOperation.PUT,
                 outboundAttributes);
 
-        // Get group id starts here
+        userStoreDomainName = null;
 
-        String groupEPURL = scimProvider.getProperty(SCIMConfigConstants.ELEMENT_NAME_GROUP_ENDPOINT);
-        String userName1 = scimProvider.getProperty(SCIMConfigConstants.ELEMENT_NAME_USERNAME);
-        String password = scimProvider.getProperty(SCIMConfigConstants.ELEMENT_NAME_PASSWORD);
-        String contentType =scimProvider.getProperty(SCIMConstants.CONTENT_TYPE_HEADER);
-        int objectType = SCIMConstants.GROUP_INT;
-
-        GetMethod getMethod = new GetMethod(groupEPURL);
-        getMethod.setQueryString("filter=displayName%20Eq%20abc");
-        getMethod.addRequestHeader(SCIMConstants.AUTHORIZATION_HEADER,
-                BasicAuthUtil.getBase64EncodedBasicAuthHeader(userName1, password));
-        HttpClient httpFilterClient = new HttpClient();
-        //send the request
-        try {
-            int responseStatus = httpFilterClient.executeMethod(getMethod);
-            String response = getMethod.getResponseBodyAsString();
-            SCIMClient scimClient = new SCIMClient();
-
-            if (contentType == null) {
-                contentType = SCIMConstants.APPLICATION_JSON;
-            }
-            ListedResource listedResource  = scimClient.decodeSCIMResponseWithListedResource(
-                    response, SCIMConstants.identifyFormat(contentType), objectType);
-            List<SCIMObject> groups = listedResource.getScimObjects();
-            String groupId = null;
-            //we expect only one user in the list
-            for (SCIMObject group1 : groups) {
-                groupId = ((Group) group1).getId();
-            }
-
-
-            ProvisionedIdentifier pi =new ProvisionedIdentifier();
-            pi.setIdentifier(groupId);
-
-            provisioningEntity.setIdentifier(pi);
-
-
-            updateGroup(provisioningEntity);
-        } catch (IOException e) {
-            log.error(e.getMessage(), e);
-        } catch (BadRequestException e) {
-            log.error(e.getMessage(), e);
-
-        } catch (CharonException e) {
-            log.error(e.getMessage(), e);
-
-        }
-
+        updateGroup(provisioningEntity);
     }
 
     @Override
