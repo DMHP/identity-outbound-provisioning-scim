@@ -135,12 +135,14 @@
                             version="${identity.inbound.provisioning.scim.import.version.range}",
                             org.wso2.charon.core.config; version="${charon.core.imp.pkg.version.range}",
                             org.wso2.charon.core.objects; version="${charon.core.imp.pkg.version.range}",
+                            org.apache.commons.httpclient,
                         </Import-Package>
                         <Export-Package>
                             !org.wso2.carbon.identity.provisioning.connector.scim.internal,
                             org.wso2.carbon.identity.provisioning.connector.scim.*;
                             version="${identity.outbound.provisioning.scim.export.version}"
                         </Export-Package>
+                        <DynamicImport-Package>*</DynamicImport-Package>
                     </instructions>
                 </configuration>
             </plugin>

@@ -20,33 +20,43 @@ package org.wso2.carbon.identity.provisioning.connector.scim;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.wso2.carbon.identity.application.common.model.Claim;
+import org.wso2.carbon.identity.application.common.model.ClaimMapping;
 import org.wso2.carbon.identity.application.common.model.Property;
 import org.wso2.carbon.identity.provisioning.*;
 import org.wso2.carbon.identity.scim.common.impl.ProvisioningClient;
 import org.wso2.carbon.identity.scim.common.utils.AttributeMapper;
+import org.wso2.carbon.identity.scim.common.utils.BasicAuthUtil;
 import org.wso2.carbon.identity.scim.common.utils.SCIMCommonConstants;
 import org.wso2.carbon.user.core.UserStoreException;
+import org.wso2.carbon.user.core.util.UserCoreUtil;
+import org.wso2.charon.core.client.SCIMClient;
 import org.wso2.charon.core.config.SCIMConfigConstants;
 import org.wso2.charon.core.config.SCIMProvider;
+import org.wso2.charon.core.exceptions.BadRequestException;
 import org.wso2.charon.core.exceptions.CharonException;
 import org.wso2.charon.core.objects.Group;
+import org.wso2.charon.core.objects.ListedResource;
+import org.wso2.charon.core.objects.SCIMObject;
 import org.wso2.charon.core.objects.User;
 import org.wso2.charon.core.schema.SCIMConstants;
 
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.io.IOException;
+import java.util.*;
 
 public class SCIMProvisioningConnector extends AbstractOutboundProvisioningConnector {
 
     private static final long serialVersionUID = -2800777564581005554L;
     private static Log log = LogFactory.getLog(SCIMProvisioningConnector.class);
     private SCIMProvider scimProvider;
+    SCIMObject scimObject;
     private String userStoreDomainName;
+    private final String GROUP_FILTER = "filter=displayName%20Eq%20";
 
     @Override
     public void init(Property[] provisioningProperties) throws IdentityProvisioningException {
@@ -202,6 +212,15 @@ public class SCIMProvisioningConnector extends AbstractOutboundProvisioningConne
             ProvisioningClient scimProvsioningClient = new ProvisioningClient(scimProvider, user,
                     httpMethod, null);
             scimProvsioningClient.provisionCreateUser();
+            for (Map.Entry<ClaimMapping, List<String>> entry : userEntity.getAttributes().entrySet()) {
+                if ("org:wso2:carbon:identity:provisioning:new:claim:group".equals(entry.getKey().getLocalClaim().
+                        getClaimUri())) {
+                    List<String> a = entry.getValue();
+                    for (String s : a) {
+                        updateGroupsOfUser(userEntity, s);
+                    }
+                }
+            }
 
         } catch (Exception e) {
             throw new IdentityProvisioningException("Error while creating the user", e);
@@ -351,6 +370,94 @@ public class SCIMProvisioningConnector extends AbstractOutboundProvisioningConne
         } catch (Exception e) {
             throw new IdentityProvisioningException("Error while updating group.", e);
         }
+    }
+
+
+
+    /**
+     * @param groupEntity
+     * @throws IdentityProvisioningException
+     */
+    private void updateGroupsOfUser(ProvisioningEntity userEntity, String groupName) throws IdentityProvisioningException {
+
+        String[] userList = {userEntity.getEntityName()};
+
+        Map<ClaimMapping, List<String>> outboundAttributes = new HashMap<>();
+
+        outboundAttributes.put(ClaimMapping.build(
+                IdentityProvisioningConstants.GROUP_CLAIM_URI, null, null, false), Arrays
+                .asList(new String[]{groupName}));
+
+        outboundAttributes.put(ClaimMapping.build(IdentityProvisioningConstants.USERNAME_CLAIM_URI,
+                null, null, false), Arrays.asList(userList));
+
+        outboundAttributes.put(ClaimMapping.build(
+                IdentityProvisioningConstants.NEW_USER_CLAIM_URI, null, null, false), Arrays
+                .asList(userEntity.getEntityName()));
+
+        outboundAttributes.put(ClaimMapping.build(
+                        IdentityProvisioningConstants.DELETED_USER_CLAIM_URI, null, null, false),
+                Arrays.asList(new String[0]));
+
+  /*      String domainName = UserCoreUtil.getDomainName(userStoreManager.getRealmConfiguration());
+        if (log.isDebugEnabled()) {
+            log.debug("Adding domain name : " + domainName + " to role : " + roleName);
+        }
+        String domainAwareName = UserCoreUtil.addDomainToName(roleName, domainName);*/
+
+        ProvisioningEntity provisioningEntity = new ProvisioningEntity(
+                ProvisioningEntityType.GROUP, groupName, ProvisioningOperation.PUT,
+                outboundAttributes);
+
+        // Get group id starts here
+
+        String groupEPURL = scimProvider.getProperty(SCIMConfigConstants.ELEMENT_NAME_GROUP_ENDPOINT);
+        String userName1 = scimProvider.getProperty(SCIMConfigConstants.ELEMENT_NAME_USERNAME);
+        String password = scimProvider.getProperty(SCIMConfigConstants.ELEMENT_NAME_PASSWORD);
+        String contentType =scimProvider.getProperty(SCIMConstants.CONTENT_TYPE_HEADER);
+        int objectType = SCIMConstants.GROUP_INT;
+
+        GetMethod getMethod = new GetMethod(groupEPURL);
+        getMethod.setQueryString("filter=displayName%20Eq%20abc");
+        getMethod.addRequestHeader(SCIMConstants.AUTHORIZATION_HEADER,
+                BasicAuthUtil.getBase64EncodedBasicAuthHeader(userName1, password));
+        HttpClient httpFilterClient = new HttpClient();
+        //send the request
+        try {
+            int responseStatus = httpFilterClient.executeMethod(getMethod);
+            String response = getMethod.getResponseBodyAsString();
+            SCIMClient scimClient = new SCIMClient();
+
+            if (contentType == null) {
+                contentType = SCIMConstants.APPLICATION_JSON;
+            }
+            ListedResource listedResource  = scimClient.decodeSCIMResponseWithListedResource(
+                    response, SCIMConstants.identifyFormat(contentType), objectType);
+            List<SCIMObject> groups = listedResource.getScimObjects();
+            String groupId = null;
+            //we expect only one user in the list
+            for (SCIMObject group1 : groups) {
+                groupId = ((Group) group1).getId();
+            }
+
+
+            ProvisionedIdentifier pi =new ProvisionedIdentifier();
+            pi.setIdentifier(groupId);
+
+            provisioningEntity.setIdentifier(pi);
+
+
+            updateGroup(provisioningEntity);
+        } catch (IOException e) {
+            log.error(e.getMessage(), e);
+        } catch (BadRequestException e) {
+            log.error(e.getMessage(), e);
+
+        } catch (CharonException e) {
+            log.error(e.getMessage(), e);
+
+        }
+
     }
 
     @Override
